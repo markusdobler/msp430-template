@@ -21,6 +21,9 @@ static void __inline__ delay(register unsigned int n)
 #define PWM_PERIOD 1024
 int MAX_DURATION = PWM_PERIOD-1;
 
+
+void on_button_splines(int);
+
 int main(void)
 {
 WDTCTL = WDTPW + WDTHOLD; // Stop WDT
@@ -49,22 +52,31 @@ VAL_BLUE  = PWM_PERIOD-1; // CCR2 PWM duty cycle
 //P1IFG &= ~BUTTON;
 //// enable interrupt on BIT3
 //P1IE |= BUTTON;
-  ADC10CTL0 &= ~ENC;
-  ADC10CTL1 = INCH_0 | SHS_0 | ADC10DIV_0 | CONSEQ_2 | ADC10SSEL_0;
-  ADC10AE0 = BIT0;
-  ADC10CTL0 = SREF_0 | ADC10SHT_0 | MSC | ADC10ON | ADC10SC | ENC;
+  DCOCTL = CALDCO_16MHZ;
+  ADC10CTL1 |= CONSEQ1; //continuous sample mode, MUST BE SET FIRST!
+  ADC10CTL0 |= ADC10SHT_2 + ADC10ON + MSC; //sample and hold time, adc on, cont. sample
+  ADC10AE0 |= 0x01; // select channel A0
+  ADC10CTL0 |= ADC10SC + ENC; // start conversions
+  #define LED BIT6
+  P1DIR |= LED;
 
-on_button_splines();
+on_button_splines(0);
 while (1) {
   delay(2000);
   if (P1IN & BIT5) {
-    on_button_splines();
+    on_button_splines(1);
   } else {
   }
   if (P1IN & BIT3) {
   } else {
+    MAX_DURATION = ADC10MEM;
+    on_button_splines(0);
   }
-  MAX_DURATION = 500; + ADC10MEM/2;
+  if(ADC10MEM>630) {
+    P1OUT |= LED;
+  } else {
+    P1OUT &= ~LED;
+  }
 }
 
 _BIS_SR(GIE); // enable interrupts
@@ -77,7 +89,7 @@ interrupt(PORT1_VECTOR) p1_isr(void) {
   switch (P1IFG & BUTTON) {
     case BUTTON:
       P1IFG = P1IFG & ~BUTTON;
-      on_button_splines();
+      on_button_splines(1);
       _BIS_SR(GIE); // enable interrupts
       _BIS_SR(LPM0_bits); // Enter LPM0
       break;
@@ -95,7 +107,8 @@ void on_button_rgb_test(void) {
   VAL_BLUE  = (col&4) ? (PWM_PERIOD-1) : 0;
 }
 
-void on_button_splines(void) {
+
+void on_button_splines(int inc) {
   static unsigned long cnt = 0;
   const unsigned char points[][3] = {
     {220, 1, 20},
@@ -109,7 +122,7 @@ void on_button_splines(void) {
   const unsigned long P = sizeof(points)/sizeof(points[0]);
   const unsigned long steps = 40;
 
-  cnt = (cnt+1) % (P*steps);
+  cnt = (cnt+inc) % (P*steps);
   unsigned long pa = cnt / steps;
   unsigned long pb = (pa+1) % P;
 
