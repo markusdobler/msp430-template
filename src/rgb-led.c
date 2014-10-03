@@ -2,6 +2,10 @@
 #include <legacymsp430.h>
 #include "hsl2rgb.h"
 
+#ifndef NULL
+#define NULL ( (void *) 0)
+#endif
+
 // Delay Routine from mspgcc help file
 static void __inline__ delay(register unsigned int n)
 {
@@ -22,79 +26,100 @@ static void __inline__ delay(register unsigned int n)
 int MAX_DURATION = PWM_PERIOD-1;
 
 
+void init_adc_continuous_mode(int channel, unsigned int * adc10sa)
+{
+  /* Initialize ADC for continuous sampling
+   *
+   * Depending on adc10sa, either a single channel or a sequence of channels is used:
+   * * for adc10sa==NULL, the channel specified by channel (e.g. INCH_1) is used;
+   *   the adc result is stored in ADC10MEM.
+   * * otherwise, all channels from INCH_0 to {channel} are used in sequence-of-channels mode;
+   *   the adc results are stored in an array starting at address `adc10sa` (with the result from
+   *   {channel} at `adc10sa[0]`, result from {channel}-1 at `adc10sa[1]`, ...)
+   */
+  ADC10CTL0 &= ~ENC;
+  ADC10CTL0 = ADC10ON;
+  while(ADC10CTL1 & ADC10BUSY) {
+    // wait until adc stops
+  }
+  int ch_id = channel >> 12;
+  if(adc10sa) {
+    ADC10DTC0 = ADC10CT;
+    ADC10DTC1 = ch_id + 1;
+    ADC10AE0 = (1 << ch_id)*2 - 1; // enable all required channels
+    ADC10SA = ((unsigned int)adc10sa);
+  } else {
+    ADC10DTC0 = 0;
+    ADC10AE0 = 1 << ch_id; // enable single channel
+  }
+
+  ADC10CTL0 |= ADC10SHT_1 | SREF_0 | MSC;
+  ADC10CTL1 |= channel + (adc10sa ? CONSEQ_3 : CONSEQ_2);
+
+  ADC10CTL0 |= ENC;
+  ADC10CTL0 |= ADC10SC;
+}
+
+
 void on_button_splines(int);
 
 int main(void)
 {
-WDTCTL = WDTPW + WDTHOLD; // Stop WDT
- 
-P1DIR |= BIT2; // P1.2 to output
-P2DIR |= BIT1 | BIT5; // P2.1 and P2.5 to output
+  WDTCTL = WDTPW + WDTHOLD; // Stop WDT
 
-P1SEL |= BIT2; // P1.2 to TA0.1
-P2SEL |= BIT1 | BIT5; // P2.1 and P2.5 to TA1.1 and TA1.2
+  P1DIR |= BIT2; // P1.2 to output
+  P2DIR |= BIT1 | BIT5; // P2.1 and P2.5 to output
 
-BCSCTL1 &= (BCSCTL1&0xf0) | 0x07;    // RSEL = 7 -> DCOCLK ~ 1 MHz
-//BCSCTL1 &= ~0xf;    // RSEL = 0 -> DCOCLK ~ 100 kHz
-//BCSCTL2 |= DIVS_3;           // SMCLK = DCOCLK/8
+  P1SEL |= BIT2; // P1.2 to TA0.1
+  P2SEL |= BIT1 | BIT5; // P2.1 and P2.5 to TA1.1 and TA1.2
 
-TA0CCR0 = TA1CCR0 = PWM_PERIOD+1; // PWM Period
-TA0CCTL1 = TA1CCTL1 = TA1CCTL2 = OUTMOD_7; // TAxCCRy reset/set
-TA0CTL = TA1CTL = TASSEL_2 | MC_1; // SMCLK, up mode
+  BCSCTL1 &= (BCSCTL1&0xf0) | 0x07;    // RSEL = 7 -> DCOCLK ~ 1 MHz
+  //BCSCTL1 &= ~0xf;    // RSEL = 0 -> DCOCLK ~ 100 kHz
+  //BCSCTL2 |= DIVS_3;           // SMCLK = DCOCLK/8
 
-VAL_RED   = PWM_PERIOD-1; // CCR1 PWM duty cycle
-VAL_GREEN = PWM_PERIOD-1; // CCR1 PWM duty cycle
-VAL_BLUE  = PWM_PERIOD-1; // CCR2 PWM duty cycle
+  TA0CCR0 = TA1CCR0 = PWM_PERIOD+1; // PWM Period
+  TA0CCTL1 = TA1CCTL1 = TA1CCTL2 = OUTMOD_7; // TAxCCRy reset/set
+  TA0CTL = TA1CTL = TASSEL_2 | MC_1; // SMCLK, up mode
 
-//// interrupt from high to low
-//P1IES |= BUTTON;
-//// clear the interrupt flag
-//P1IFG &= ~BUTTON;
-//// enable interrupt on BIT3
-//P1IE |= BUTTON;
-//
-  DCOCTL = CALDCO_16MHZ;
-  ADC10CTL0 &= ~ENC;
-  ADC10CTL0 = ADC10ON;
-  while(ADC10CTL1 & ADC10BUSY) {
-    // pass
-  }
-  ADC10DTC0 = ADC10CT;
-  ADC10DTC1 = 2;
-  ADC10AE0 = 0x03; // select channels A0 and A1
-  volatile unsigned int adc_values[10];
-  ADC10SA = ((unsigned int)adc_values);
+  VAL_RED   = PWM_PERIOD-1; // CCR1 PWM duty cycle
+  VAL_GREEN = PWM_PERIOD-1; // CCR1 PWM duty cycle
+  VAL_BLUE  = PWM_PERIOD-1; // CCR2 PWM duty cycle
 
-  ADC10CTL0 |= ADC10SHT_1 | SREF_0 | MSC;
-  ADC10CTL1 |= INCH_1 + CONSEQ_3;
+  //// interrupt from high to low
+  //P1IES |= BUTTON;
+  //// clear the interrupt flag
+  //P1IFG &= ~BUTTON;
+  //// enable interrupt on BIT3
+  //P1IE |= BUTTON;
+  //
+  //DCOCTL = CALDCO_16MHZ;
 
-  ADC10CTL0 |= ENC;
-  ADC10CTL0 |= ADC10SC;
-
-  #define LED BIT6
+  volatile unsigned int adc_values[2];
+  init_adc_continuous_mode(INCH_1, adc_values);
+#define LED BIT6
   P1DIR |= LED;
 
-on_button_splines(0);
-while (1) {
-  delay(2000);
-  if (P1IN & BIT5) {
-    on_button_splines(1);
-  } else {
+  on_button_splines(0);
+  while (1) {
+    delay(2000);
+    if (P1IN & BIT5) {
+      on_button_splines(1);
+    } else {
+    }
+    if (P1IN & BIT3) {
+    } else {
+      MAX_DURATION = adc_values[1];
+      on_button_splines(0);
+    }
+    if(adc_values[0]&0x40) {
+      P1OUT |= LED;
+    } else {
+      P1OUT &= ~LED;
+    }
   }
-  if (P1IN & BIT3) {
-  } else {
-    MAX_DURATION = adc_values[1];
-    on_button_splines(0);
-  }
-  if(adc_values[1]&0x40) {
-    P1OUT |= LED;
-  } else {
-    P1OUT &= ~LED;
-  }
-}
 
-_BIS_SR(GIE); // enable interrupts
-_BIS_SR(LPM0_bits); // Enter LPM0
+  _BIS_SR(GIE); // enable interrupts
+  _BIS_SR(LPM0_bits); // Enter LPM0
 }
 
 
