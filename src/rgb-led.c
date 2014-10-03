@@ -52,11 +52,25 @@ VAL_BLUE  = PWM_PERIOD-1; // CCR2 PWM duty cycle
 //P1IFG &= ~BUTTON;
 //// enable interrupt on BIT3
 //P1IE |= BUTTON;
+//
   DCOCTL = CALDCO_16MHZ;
-  ADC10CTL1 |= CONSEQ1; //continuous sample mode, MUST BE SET FIRST!
-  ADC10CTL0 |= ADC10SHT_2 + ADC10ON + MSC; //sample and hold time, adc on, cont. sample
-  ADC10AE0 |= 0x01; // select channel A0
-  ADC10CTL0 |= ADC10SC + ENC; // start conversions
+  ADC10CTL0 &= ~ENC;
+  ADC10CTL0 = ADC10ON;
+  while(ADC10CTL1 & ADC10BUSY) {
+    // pass
+  }
+  ADC10DTC0 = ADC10CT;
+  ADC10DTC1 = 2;
+  ADC10AE0 = 0x03; // select channels A0 and A1
+  volatile unsigned int adc_values[10];
+  ADC10SA = ((unsigned int)adc_values);
+
+  ADC10CTL0 |= ADC10SHT_1 | SREF_0 | MSC;
+  ADC10CTL1 |= INCH_1 + CONSEQ_3;
+
+  ADC10CTL0 |= ENC;
+  ADC10CTL0 |= ADC10SC;
+
   #define LED BIT6
   P1DIR |= LED;
 
@@ -69,10 +83,10 @@ while (1) {
   }
   if (P1IN & BIT3) {
   } else {
-    MAX_DURATION = ADC10MEM;
+    MAX_DURATION = adc_values[1];
     on_button_splines(0);
   }
-  if(ADC10MEM>630) {
+  if(adc_values[1]&0x40) {
     P1OUT |= LED;
   } else {
     P1OUT &= ~LED;
