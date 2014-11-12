@@ -52,7 +52,11 @@ For the MSP430 Launchpad, the debugger is `rf2500`:
 
 Note, you may need to run mspdebug as root.
 
-In mspdebug, you can load and run the program:
+To upload the program from a script, you can use
+
+    mspdebug rf2500 "prog build/main.elf"
+
+In mspdebug, you can load and run the program [note: I also had to use 'prog' to get this working]:
 
     (mspdebug) load build/main.hex
     (mspdebug) run
