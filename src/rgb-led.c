@@ -6,16 +6,6 @@
 #define NULL ( (void *) 0)
 #endif
 
-// Delay Routine from mspgcc help file
-static void __inline__ delay(register unsigned int n)
-{
-  __asm__ __volatile__ (
-  "1: \n"
-  " dec %[n] \n"
-  " jne 1b \n"
-        : [n] "+r"(n));
-}
-
 #define BUTTON BIT3
 
 #define VAL_RED TA0CCR1
@@ -26,7 +16,18 @@ static void __inline__ delay(register unsigned int n)
 int MAX_DURATION = PWM_PERIOD-1;
 
 
-void init_adc_continuous_mode(int channel, unsigned int * adc10sa)
+// Delay Routine from mspgcc help file
+static void __inline__ delay(register unsigned int n)
+{
+  __asm__ __volatile__ (
+  "1: \n"
+  " dec %[n] \n"
+  " jne 1b \n"
+        : [n] "+r"(n));
+}
+
+
+void init_adc_continuous_mode(int channel, volatile unsigned int * adc10sa)
 {
   /* Initialize ADC for continuous sampling
    *
@@ -61,7 +62,7 @@ void init_adc_continuous_mode(int channel, unsigned int * adc10sa)
 }
 
 
-void on_button_splines(int);
+void update_rgb_color_splines(int);
 
 int main(void)
 {
@@ -95,21 +96,23 @@ int main(void)
   //DCOCTL = CALDCO_16MHZ;
 
   volatile unsigned int adc_values[2];
-  init_adc_continuous_mode(INCH_1, adc_values);
+  //init_adc_continuous_mode(INCH_1, adc_values);
+  init_adc_continuous_mode(INCH_0, NULL);
 #define LED BIT6
   P1DIR |= LED;
 
-  on_button_splines(0);
+  update_rgb_color_splines(0);
   while (1) {
     delay(2000);
     if (P1IN & BIT5) {
-      on_button_splines(1);
+      update_rgb_color_splines(1);
     } else {
     }
     if (P1IN & BIT3) {
     } else {
-      MAX_DURATION = adc_values[1];
-      on_button_splines(0);
+      //MAX_DURATION = adc_values[1];
+      MAX_DURATION =  ADC10MEM;
+      update_rgb_color_splines(0);
     }
     if(adc_values[0]&0x40) {
       P1OUT |= LED;
@@ -128,7 +131,7 @@ interrupt(PORT1_VECTOR) p1_isr(void) {
   switch (P1IFG & BUTTON) {
     case BUTTON:
       P1IFG = P1IFG & ~BUTTON;
-      on_button_splines(1);
+      update_rgb_color_splines(1);
       _BIS_SR(GIE); // enable interrupts
       _BIS_SR(LPM0_bits); // Enter LPM0
       break;
@@ -138,7 +141,7 @@ interrupt(PORT1_VECTOR) p1_isr(void) {
   return;
 }
 
-void on_button_rgb_test(void) {
+void update_rgb_color_rgb_test(void) {
   static int col = 0;
   col++;
   VAL_RED   = (col&1) ? (PWM_PERIOD-1) : 0;
@@ -147,7 +150,7 @@ void on_button_rgb_test(void) {
 }
 
 
-void on_button_splines(int inc) {
+void update_rgb_color_splines(int inc) {
   static unsigned long cnt = 0;
   const unsigned char points[][3] = {
     {220, 1, 20},
@@ -179,13 +182,4 @@ void on_button_splines(int inc) {
 __interrupt void ADC10_ISR (void)
 {
 	__bic_SR_register_on_exit(CPUOFF);        // Return to active mode }
-}
-
-// Function containing ADC set-up
-void ConfigureAdc(void)
-{
-
-	ADC10CTL1 = INCH_1 + ADC10DIV_3 ;         // Channel 1, ADC10CLK/3
-	ADC10CTL0 = SREF_0 + ADC10SHT_3 + ADC10ON + ADC10IE;  // Vcc & Vss as reference, Sample and hold for 64 Clock cycles, ADC on, ADC interrupt enable
-	ADC10AE0 |= BIT1;                         // ADC input enable P1.1
 }
